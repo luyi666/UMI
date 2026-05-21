@@ -1,11 +1,11 @@
+"""Implements the transformer-based forecasting model and sequence encoders."""
 
 import copy
 import math
 
 import torch
 import torch.nn.functional as F
-from torch import nn, sigmoid
-
+from torch import nn
 
 
 class Trans(nn.Module):
@@ -17,11 +17,17 @@ class Trans(nn.Module):
         dim_ff: int,
         seq_len: int,
         num_layers: int,
-        dropout: float = 0.0,add_xdim=0,embeddim=0):
+        dropout: float = 0.0,
+        add_xdim=0,
+        embeddim=0,
+    ):
         super().__init__()
         self.position_encoder = PositionalEncoder(input_size)
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=dim_model, nhead=num_heads, dim_feedforward=dim_ff,dropout = 0.1,
+            d_model=dim_model,
+            nhead=num_heads,
+            dim_feedforward=dim_ff,
+            dropout=0.1,
         )
         layer_norm = nn.LayerNorm(dim_model)
         self.seq_len = seq_len
@@ -29,19 +35,20 @@ class Trans(nn.Module):
         self.encoder = nn.TransformerEncoder(
             encoder_layer, num_layers=num_layers, norm=layer_norm
         )
-        self.fc1 = nn.Linear(input_size, dim_model,bias=False)
+        self.fc1 = nn.Linear(input_size, dim_model, bias=False)
 
-
-        if(embeddim!=0):
-            self.layer1 = nn.Linear(embeddim*2, embeddim*2)
-            self.fc2 = nn.Linear(dim_model + add_xdim + dim_model, dim_model // 2, bias=False)
+        if embeddim != 0:
+            self.layer1 = nn.Linear(embeddim * 2, embeddim * 2)
+            self.fc2 = nn.Linear(
+                dim_model + add_xdim + dim_model, dim_model // 2, bias=False
+            )
         else:
-            self.fc2 = nn.Linear(dim_model + add_xdim , dim_model // 2, bias=False)
+            self.fc2 = nn.Linear(dim_model + add_xdim, dim_model // 2, bias=False)
 
         self.dropout = nn.Dropout(dropout)
-        self.score_layer = nn.Linear(dim_model // 2, 1,bias=False)
+        self.score_layer = nn.Linear(dim_model // 2, 1, bias=False)
 
-    def forward(self, x,addi_x=None):
+    def forward(self, x, addi_x=None):
         assert x.size(1) == self.seq_len and x.size(2) == self.input_size
         x = self.position_encoder(x)
         out = torch.relu(self.fc1(x))
@@ -49,28 +56,23 @@ class Trans(nn.Module):
         out = self.encoder(out)
         out = out.permute(1, 0, 2)
         out = out[:, -1, :]
-        if (addi_x is not None):
-            marketembed,outstks=addi_x
+        if addi_x is not None:
+            marketembed, outstks = addi_x
             out_K = self.layer1(outstks)
-            out_Q = out_K.permute(1,0)
+            out_Q = out_K.permute(1, 0)
 
-            out_QK = torch.matmul(out_K,out_Q)
-
+            out_QK = torch.matmul(out_K, out_Q)
 
             self_attn = F.softmax(out_QK, dim=1).unsqueeze(2)
-            out2=out.unsqueeze(0)
+            out2 = out.unsqueeze(0)
             outD = torch.sum(out2 * self_attn, dim=1)
 
-
-            out = torch.cat([out, marketembed,outD], dim=1)
+            out = torch.cat([out, marketembed, outD], dim=1)
         out = self.dropout(torch.relu(self.fc2(out)))
-
 
         score = self.score_layer(self.dropout(out))
 
         return score
-
-
 
 
 def clones(module, N):
@@ -88,10 +90,6 @@ class Scaled_Dot_Product_Attention(nn.Module):
         p_attn = F.softmax(scores, dim=-1)
 
         return torch.matmul(p_attn, V)
-
-
-
-
 
 
 class PositionalEncoder(torch.nn.Module):
@@ -113,5 +111,3 @@ class PositionalEncoder(torch.nn.Module):
             pe = self.pe[:, :seq_len]
             x = x + pe
             return x
-
-

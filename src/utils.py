@@ -1,8 +1,8 @@
+"""Provides shared math, ranking, and dataframe helper utilities."""
 
 import numpy as np
 import pandas as pd
 import torch
-from scipy.fft import idct
 
 
 def weighted_corrcoef(y1, y2, weight):
@@ -39,9 +39,9 @@ def generate_weight(stock_num, method=None):
     if method == "exp_decay":
         for j in range(10):
             if j < 9:
-                weight_list += [0.9 ** j] * one_decile
+                weight_list += [0.9**j] * one_decile
             else:
-                weight_list += [0.9 ** j] * (stock_num - one_decile * 9)
+                weight_list += [0.9**j] * (stock_num - one_decile * 9)
     else:
         for j in range(10):
             if j < 9:
@@ -54,19 +54,17 @@ def generate_weight(stock_num, method=None):
     return weight
 
 
-def ndcg(golden, current, n = -1):
+def ndcg(golden, current, n=-1):
     log2_table = np.log2(np.arange(2, 5002))
 
     def dcg_at_n(rel, n):
         rel = np.asfarray(rel)[:n]
 
-        dcg = np.sum(np.divide(np.power(2, rel) - 1,
-          log2_table[:rel.shape[0]]))
+        dcg = np.sum(np.divide(np.power(2, rel) - 1, log2_table[: rel.shape[0]]))
         return dcg
 
-
     k = len(current) if n == -1 else n
-    idcg = dcg_at_n(sorted(golden, reverse=True), n = k)
+    idcg = dcg_at_n(sorted(golden, reverse=True), n=k)
     dcg = dcg_at_n(current, n=k)
     tmp_ndcg = 0 if idcg == 0 else dcg / idcg
     return tmp_ndcg
@@ -82,36 +80,45 @@ def lambdaRank_update(args, x, y, scores, device):
     scores = scores.unsqueeze(1)
     _, sorted_idx = scores.sort(dim=0, descending=True)
     n_stocks = scores.size(0)
-    n_rel = min(args.lambda_topk, n_stocks-1)
+    n_rel = min(args.lambda_topk, n_stocks - 1)
     n_irr = n_stocks - n_rel
     stock_ranks = torch.zeros(n_stocks).to(device)
     stock_ranks[sorted_idx] = 1 + torch.arange(n_stocks).view(-1, 1).to(device).float()
     stock_ranks = stock_ranks.view(-1, 1)
     score_diffs = scores[:n_rel] - scores[n_rel:].view(-1)
     exped = score_diffs.exp()
-    N =  1 / idcg(n_rel)
-    dcg_diffs = 1 / (1 + stock_ranks[:n_rel]).log2() - (1 / (1 + stock_ranks[n_rel:]).log2()).view(-1)
+    N = 1 / idcg(n_rel)
+    dcg_diffs = 1 / (1 + stock_ranks[:n_rel]).log2() - (
+        1 / (1 + stock_ranks[n_rel:]).log2()
+    ).view(-1)
     lamb_updates = 1 / (1 + exped) * N * dcg_diffs.abs()
     lambs = torch.zeros((n_stocks, 1)).to(device)
     lambs[:n_rel] += lamb_updates.sum(dim=1, keepdim=True)
     lambs[n_rel:] -= lamb_updates.sum(dim=0, keepdim=True).t()
-    ndcg_value = ndcg(y.cpu().numpy().reshape(-1), y[sorted_idx].cpu().numpy().reshape(-1), n=args.lambda_topk)
+    ndcg_value = ndcg(
+        y.cpu().numpy().reshape(-1),
+        y[sorted_idx].cpu().numpy().reshape(-1),
+        n=args.lambda_topk,
+    )
     return -ndcg_value, lambs.squeeze()
 
 
 def df_to_dict(df: pd.DataFrame):
     daily_dict = {}
-    df = df.sort_values(by=['Date', 'StkCode'], ascending=True)
-    for date, daily_df in df.groupby('Date'):
+    df = df.sort_values(by=["Date", "StkCode"], ascending=True)
+    for date, daily_df in df.groupby("Date"):
         daily_dict[date] = daily_df
     return daily_dict
 
+
 def df_to_dict2(df: pd.DataFrame):
     daily_dict = {}
-    df = df.sort_values(by=['Date', 'StkCode'], ascending=True)
-    for date, daily_df in df.groupby('Date'):
+    df = df.sort_values(by=["Date", "StkCode"], ascending=True)
+    for date, daily_df in df.groupby("Date"):
         daily_dict[int(date)] = daily_df
     return daily_dict
+
+
 def adjust_lr(optimizer, epoch, learning_rate):
     lr = learning_rate
     if epoch >= 5:
@@ -122,4 +129,4 @@ def adjust_lr(optimizer, epoch, learning_rate):
         lr = learning_rate * 0.05
 
     for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
+        param_group["lr"] = lr

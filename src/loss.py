@@ -1,11 +1,9 @@
-
+"""Defines reusable loss functions for the forecasting and pretraining stages."""
 
 import torch
 from torch import Tensor
 
 from utils import generate_weight, weighted_corrcoef
-
-
 
 
 def mse_loss(output_data: Tensor, target_data: Tensor):
